@@ -8,7 +8,7 @@ var WidgetMetadata = {
   id: "rex.feifan.vod",
   title: "非凡资源",
   icon: "https://ffzy.tv/favicon.ico",
-  version: "0.1.4",
+  version: "0.1.5",
   requiredVersion: "0.0.1",
   description: "非凡资源网 ffm3u8 专用 JSON 接口：分类、搜索、详情与直接 M3U8 播放",
   author: "ukonic",
@@ -71,6 +71,70 @@ var WidgetMetadata = {
           type: "page",
           value: "1"
         }
+      ]
+    },
+    {
+      id: "feifanMovies",
+      title: "非凡电影",
+      functionName: "loadFeifanMovies",
+      cacheDuration: 300,
+      params: [
+        { name: "category", title: "分类", type: "enumeration", value: "all", enumOptions: [
+          { title: "全部电影", value: "all" }, { title: "动作片", value: "6" }, { title: "喜剧片", value: "7" },
+          { title: "爱情片", value: "8" }, { title: "科幻片", value: "9" }, { title: "恐怖片", value: "10" },
+          { title: "剧情片", value: "11" }, { title: "战争片", value: "12" }, { title: "纪录片", value: "20" }
+        ] },
+        { name: "page", title: "页码", type: "page", value: "1" }
+      ]
+    },
+    {
+      id: "feifanSeries",
+      title: "非凡剧集",
+      functionName: "loadFeifanSeries",
+      cacheDuration: 300,
+      params: [
+        { name: "category", title: "分类", type: "enumeration", value: "all", enumOptions: [
+          { title: "全部剧集", value: "all" }, { title: "国产剧", value: "13" }, { title: "香港剧", value: "14" },
+          { title: "韩国剧", value: "15" }, { title: "欧美剧", value: "16" }, { title: "台湾剧", value: "21" },
+          { title: "日本剧", value: "22" }, { title: "海外剧", value: "23" }, { title: "泰国剧", value: "24" }
+        ] },
+        { name: "page", title: "页码", type: "page", value: "1" }
+      ]
+    },
+    {
+      id: "feifanVariety",
+      title: "非凡综艺",
+      functionName: "loadFeifanVariety",
+      cacheDuration: 300,
+      params: [
+        { name: "category", title: "分类", type: "enumeration", value: "all", enumOptions: [
+          { title: "全部综艺", value: "all" }, { title: "大陆综艺", value: "25" }, { title: "港台综艺", value: "26" },
+          { title: "日韩综艺", value: "27" }, { title: "欧美综艺", value: "28" }
+        ] },
+        { name: "page", title: "页码", type: "page", value: "1" }
+      ]
+    },
+    {
+      id: "feifanAnime",
+      title: "非凡动漫",
+      functionName: "loadFeifanAnime",
+      cacheDuration: 300,
+      params: [
+        { name: "category", title: "分类", type: "enumeration", value: "all", enumOptions: [
+          { title: "全部动漫", value: "all" }, { title: "国产动漫", value: "29" }, { title: "日韩动漫", value: "30" },
+          { title: "欧美动漫", value: "31" }, { title: "港台动漫", value: "32" }, { title: "海外动漫", value: "33" }
+        ] },
+        { name: "page", title: "页码", type: "page", value: "1" }
+      ]
+    },
+    {
+      id: "feifanShort",
+      title: "非凡短剧",
+      functionName: "loadFeifanShort",
+      cacheDuration: 300,
+      params: [
+        { name: "category", title: "分类", type: "enumeration", value: "36", enumOptions: [{ title: "短剧", value: "36" }] },
+        { name: "page", title: "页码", type: "page", value: "1" }
       ]
     }
   ],
@@ -205,7 +269,9 @@ function ffMediaType(item) {
   var type = Number(item && item.type_id);
   return parent === 2 || type === 2 || type === 13 || type === 14 ||
     type === 15 || type === 16 || type === 21 || type === 22 ||
-    type === 23 || type === 24 || type === 36 ? "tv" : "movie";
+    type === 23 || type === 24 || type === 25 || type === 26 ||
+    type === 27 || type === 28 || type === 29 || type === 30 ||
+    type === 31 || type === 32 || type === 33 || type === 36 ? "tv" : "movie";
 }
 
 function ffVodLink(id) {
@@ -291,6 +357,16 @@ function ffMapList(list) {
   });
 }
 
+function ffUniqueItems(items) {
+  var seen = {};
+  return items.filter(function (item) {
+    var key = ffText(item && (item.id || item.link));
+    if (!key || seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+}
+
 function ffIsDirectM3u8(url) {
   var clean = ffText(url).trim();
   return /^https?:\/\//i.test(clean) &&
@@ -356,7 +432,7 @@ function ffDetailItem(item) {
   if (base.episodeItems.length) base.videoUrl = base.episodeItems[0].videoUrl;
   if (!base.episodeItems.length) {
     base.description += (base.description ? "\n\n" : "") +
-      "[FF-PLAY-EMPTY] 接口当前没有返回可直接播放的 M3U8/MP4 地址。";
+      "[FF-PLAY-EMPTY] 接口当前没有返回可直接播放的 M3U8 地址。";
   }
   return base;
 }
@@ -370,6 +446,25 @@ async function loadFeifanList(params) {
   var result = await ffGet(query);
   return ffMapList(result.list);
 }
+
+async function loadFeifanChannel(params, categoryIds) {
+  params = params || {};
+  var category = ffText(params.genreId || params.category || "all").trim();
+  if (category && category !== "all") return loadFeifanList({ category: category, page: params.page });
+  var page = ffPositiveInt(params.page, 1);
+  var results = await Promise.all(categoryIds.map(function (id) {
+    return ffGet({ ac: "list", t: id, pg: page }).catch(function () { return { list: [] }; });
+  }));
+  var items = [];
+  results.forEach(function (result) { items = items.concat(ffMapList(result.list)); });
+  return ffUniqueItems(items).slice(0, 60);
+}
+
+function loadFeifanMovies(params) { return loadFeifanChannel(params, ["6", "7", "8", "9", "10", "11", "12", "20"]); }
+function loadFeifanSeries(params) { return loadFeifanChannel(params, ["13", "14", "15", "16", "21", "22", "23", "24"]); }
+function loadFeifanVariety(params) { return loadFeifanChannel(params, ["25", "26", "27", "28"]); }
+function loadFeifanAnime(params) { return loadFeifanChannel(params, ["29", "30", "31", "32", "33"]); }
+function loadFeifanShort(params) { return loadFeifanChannel(params, ["36"]); }
 
 async function searchFeifan(params) {
   params = params || {};
@@ -429,27 +524,19 @@ function ffPickHomeDetail(list, keyword, params) {
   var season = ffPositiveInt(params && params.season, 0);
   var seasonText = season > 0 ? ("第" + ffChineseNumber(season) + "季") : "";
   var wantedSeason = ffMatchTitle(keyword + seasonText);
-  var best = null;
-  var bestScore = -1;
+  var candidates = [];
   (Array.isArray(list) ? list : []).forEach(function (item) {
     if (!item || ffIsBlocked(item) || !ffParsePlayLines(item).length) return;
     var title = ffMatchTitle(item.vod_name);
     if (!title) return;
-    var score = -1;
-    if (seasonText && title === wantedSeason) score = 300;
-    else if (title === wanted) score = 260;
-    else if (title.indexOf(wanted) === 0 || wanted.indexOf(title) === 0) score = 180;
-    else if (title.indexOf(wanted) >= 0 || wanted.indexOf(title) >= 0) score = 120;
-    if (score < 0) return;
-    if (seasonText && title.indexOf(ffMatchTitle(seasonText)) >= 0) score += 30;
+    if (title !== wanted && (!seasonText || title !== wantedSeason)) return;
     var requestedType = ffText(params && params.type).toLowerCase();
-    if ((requestedType === "tv" || requestedType === "movie") && ffMediaType(item) === requestedType) score += 10;
-    if (score > bestScore) {
-      best = item;
-      bestScore = score;
-    }
+    if ((requestedType === "tv" || requestedType === "movie") && ffMediaType(item) !== requestedType) return;
+    var requestedYear = ffText(params && params.year).trim();
+    if (requestedYear && ffText(item.vod_year).trim() && ffText(item.vod_year).trim() !== requestedYear) return;
+    candidates.push(item);
   });
-  return best;
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 async function loadResource(params) {
