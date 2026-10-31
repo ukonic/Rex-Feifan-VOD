@@ -8,13 +8,21 @@ var WidgetMetadata = {
   id: "rex.feifan.vod",
   title: "非凡点播",
   icon: "https://ffzy.tv/favicon.ico",
-  version: "0.1.0",
+  version: "0.1.1",
   requiredVersion: "0.0.1",
   description: "非凡资源网公开 JSON 接口：分类、搜索、详情与直接 M3U8 播放",
   author: "Rex User",
   site: "https://ffzy.tv/help/",
   detailCacheDuration: 300,
   modules: [
+    {
+      id: "loadResource",
+      title: "加载非凡播放源",
+      functionName: "loadResource",
+      type: "stream",
+      cacheDuration: 0,
+      params: []
+    },
     {
       id: "feifanVod",
       title: "非凡点播",
@@ -88,7 +96,7 @@ var WidgetMetadata = {
 
 var FF_API = "https://api.ffzyapi.com/api.php/provide/vod/";
 var FF_SITE = "https://ffzy.tv/";
-var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.0)";
+var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.1)";
 var FF_BLOCKED_TYPE_IDS = { "34": true };
 var FF_BLOCKED_WORDS = [
   "伦理片", "伦理", "福利", "里番", "无码", "有码", "情色", "色情",
@@ -346,7 +354,7 @@ function ffDetailItem(item) {
   base.backdropPath = base.coverUrl;
   base.backdropPaths = base.coverUrl ? [base.coverUrl] : [];
   base.episodeItems = ffEpisodeItems(item, lines);
-  if (base.episodeItems.length === 1) base.videoUrl = base.episodeItems[0].videoUrl;
+  if (base.episodeItems.length) base.videoUrl = base.episodeItems[0].videoUrl;
   if (!base.episodeItems.length) {
     base.description += (base.description ? "\n\n" : "") +
       "[FF-PLAY-EMPTY] 接口当前没有返回可直接播放的 M3U8/MP4 地址。";
@@ -385,4 +393,52 @@ async function loadDetail(link) {
     if (ffText(list[i] && list[i].vod_id) === id) return ffDetailItem(list[i]);
   }
   return list.length ? ffDetailItem(list[0]) : null;
+}
+
+function ffVideoResource(line) {
+  return {
+    name: line.title || "非凡 M3U8",
+    description: "来源：" + (line.source || "ffm3u8"),
+    url: line.url,
+    playerType: "app"
+  };
+}
+
+async function loadResource(params) {
+  params = params || {};
+  var directCandidates = [params.videoUrl, params.url, params.id];
+  for (var i = 0; i < directCandidates.length; i += 1) {
+    var directUrl = ffHttps(directCandidates[i]);
+    if (ffIsDirectVideo(directUrl)) {
+      return [ffVideoResource({
+        title: ffStripHtml(params.episodeName || params.title) || "非凡 M3U8",
+        source: "ffm3u8",
+        url: directUrl
+      })];
+    }
+  }
+
+  var vodId = ffVodId(params.link || params.id);
+  if (!vodId) return [];
+  var result = await ffGet({ ac: "detail", ids: vodId });
+  var list = Array.isArray(result.list) ? result.list : [];
+  if (!list.length || ffIsBlocked(list[0])) return [];
+  var lines = ffParsePlayLines(list[0]);
+  if (!lines.length) return [];
+
+  var episode = ffPositiveInt(params.episode, 0);
+  if (episode > 0 && lines[episode - 1]) {
+    return [ffVideoResource(lines[episode - 1])];
+  }
+
+  var episodeName = ffStripHtml(params.episodeName || params.title);
+  if (episodeName) {
+    for (var lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+      if (lines[lineIndex].title === episodeName) {
+        return [ffVideoResource(lines[lineIndex])];
+      }
+    }
+  }
+
+  return [ffVideoResource(lines[0])];
 }
