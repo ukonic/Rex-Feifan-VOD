@@ -1,16 +1,16 @@
 /*
- * Rex / ForwardWidgets - 非凡资源网 VOD
+ * Rex / ForwardWidgets - 非凡资源
  *
- * 仅使用资源站公开的 MacCMS JSON 接口，并只接受直接的 HLS/MP4 播放地址。
+ * 仅使用非凡资源站公开的 ffm3u8 JSON 接口，并只接受直接的 HLS 播放地址。
  * 不包含 Cookie、账号、网页解析器或第三方解析服务。
  */
 var WidgetMetadata = {
   id: "rex.feifan.vod",
-  title: "非凡点播",
+  title: "非凡资源",
   icon: "https://ffzy.tv/favicon.ico",
-  version: "0.1.2",
+  version: "0.1.3",
   requiredVersion: "0.0.1",
-  description: "非凡资源网公开 JSON 接口：分类、搜索、详情与直接 M3U8 播放",
+  description: "非凡资源网 ffm3u8 专用 JSON 接口：分类、搜索、详情与直接 M3U8 播放",
   author: "Rex User",
   site: "https://ffzy.tv/help/",
   detailCacheDuration: 300,
@@ -25,7 +25,7 @@ var WidgetMetadata = {
     },
     {
       id: "feifanVod",
-      title: "非凡点播",
+      title: "非凡资源",
       description: "统一入口：最新、电影、剧集、综艺、动漫和短剧细分类",
       functionName: "loadFeifanList",
       cacheDuration: 300,
@@ -75,7 +75,7 @@ var WidgetMetadata = {
     }
   ],
   search: {
-    title: "搜索非凡点播",
+    title: "搜索非凡资源",
     functionName: "searchFeifan",
     params: [
       {
@@ -94,9 +94,9 @@ var WidgetMetadata = {
   }
 };
 
-var FF_API = "https://api.ffzyapi.com/api.php/provide/vod/";
+var FF_API = "https://api.ffzyapi.com/api.php/provide/vod/from/ffm3u8/";
 var FF_SITE = "https://ffzy.tv/";
-var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.2)";
+var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.3)";
 var FF_BLOCKED_TYPE_IDS = { "34": true };
 var FF_BLOCKED_WORDS = [
   "伦理片", "伦理", "福利", "里番", "无码", "有码", "情色", "色情",
@@ -291,21 +291,20 @@ function ffMapList(list) {
   });
 }
 
-function ffIsDirectVideo(url) {
+function ffIsDirectM3u8(url) {
   var clean = ffText(url).trim();
   return /^https?:\/\//i.test(clean) &&
-    (/\.(?:m3u8|mp4)(?:[?#]|$)/i.test(clean) || /\/index\.m3u8(?:[?#]|$)/i.test(clean));
+    (/\.m3u8(?:[?#]|$)/i.test(clean) || /\/index\.m3u8(?:[?#]|$)/i.test(clean));
 }
 
 function ffParsePlayLines(item) {
   var sources = ffText(item && item.vod_play_from).split("$$$");
   var groups = ffText(item && item.vod_play_url).split("$$$");
-  var preferred = [];
-  var fallback = [];
+  var m3u8Lines = [];
   for (var groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
     var source = ffText(sources[groupIndex] || ("线路" + (groupIndex + 1))).trim();
+    if (!/ffm3u8/i.test(source)) continue;
     var entries = groups[groupIndex].split("#");
-    var target = /ffm3u8/i.test(source) ? preferred : fallback;
     for (var entryIndex = 0; entryIndex < entries.length; entryIndex += 1) {
       var raw = ffText(entries[entryIndex]).trim();
       if (!raw) continue;
@@ -313,8 +312,8 @@ function ffParsePlayLines(item) {
       var title = separator >= 0 ? raw.slice(0, separator) : ("第" + (entryIndex + 1) + "集");
       var url = separator >= 0 ? raw.slice(separator + 1) : raw;
       url = ffHttps(url.trim());
-      if (!ffIsDirectVideo(url)) continue;
-      target.push({
+      if (!ffIsDirectM3u8(url)) continue;
+      m3u8Lines.push({
         source: source || "直连",
         title: ffStripHtml(title) || ("第" + (entryIndex + 1) + "集"),
         url: url,
@@ -322,7 +321,7 @@ function ffParsePlayLines(item) {
       });
     }
   }
-  return preferred.length ? preferred : fallback;
+  return m3u8Lines;
 }
 
 function ffEpisodeItems(item, lines) {
@@ -458,7 +457,7 @@ async function loadResource(params) {
   var directCandidates = [params.videoUrl, params.url, params.id];
   for (var i = 0; i < directCandidates.length; i += 1) {
     var directUrl = ffHttps(directCandidates[i]);
-    if (ffIsDirectVideo(directUrl)) {
+    if (ffIsDirectM3u8(directUrl)) {
       return [ffVideoResource({
         title: ffStripHtml(params.episodeName || params.title) || "非凡 M3U8",
         source: "ffm3u8",
