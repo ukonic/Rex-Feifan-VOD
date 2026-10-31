@@ -8,7 +8,7 @@ var WidgetMetadata = {
   id: "rex.feifan.vod",
   title: "非凡点播",
   icon: "https://ffzy.tv/favicon.ico",
-  version: "0.1.1",
+  version: "0.1.2",
   requiredVersion: "0.0.1",
   description: "非凡资源网公开 JSON 接口：分类、搜索、详情与直接 M3U8 播放",
   author: "Rex User",
@@ -96,7 +96,7 @@ var WidgetMetadata = {
 
 var FF_API = "https://api.ffzyapi.com/api.php/provide/vod/";
 var FF_SITE = "https://ffzy.tv/";
-var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.1)";
+var FF_UA = "Mozilla/5.0 (Rex ForwardWidget; Feifan VOD/0.1.2)";
 var FF_BLOCKED_TYPE_IDS = { "34": true };
 var FF_BLOCKED_WORDS = [
   "伦理片", "伦理", "福利", "里番", "无码", "有码", "情色", "色情",
@@ -404,6 +404,55 @@ function ffVideoResource(line) {
   };
 }
 
+function ffMatchTitle(value) {
+  return ffStripHtml(value)
+    .toLowerCase()
+    .replace(/[（(][^）)]*[）)]/g, "")
+    .replace(/[\s·•:：,，.。!！?？'"“”‘’\-_/\\]/g, "");
+}
+
+function ffChineseNumber(value) {
+  var number = Number(value);
+  var digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+  if (!isFinite(number) || number < 1) return "";
+  number = Math.floor(number);
+  if (number <= 10) return digits[number];
+  if (number < 20) return "十" + digits[number - 10];
+  if (number < 100) {
+    return digits[Math.floor(number / 10)] + "十" + (number % 10 ? digits[number % 10] : "");
+  }
+  return String(number);
+}
+
+function ffPickHomeDetail(list, keyword, params) {
+  var wanted = ffMatchTitle(keyword);
+  if (!wanted) return null;
+  var season = ffPositiveInt(params && params.season, 0);
+  var seasonText = season > 0 ? ("第" + ffChineseNumber(season) + "季") : "";
+  var wantedSeason = ffMatchTitle(keyword + seasonText);
+  var best = null;
+  var bestScore = -1;
+  (Array.isArray(list) ? list : []).forEach(function (item) {
+    if (!item || ffIsBlocked(item) || !ffParsePlayLines(item).length) return;
+    var title = ffMatchTitle(item.vod_name);
+    if (!title) return;
+    var score = -1;
+    if (seasonText && title === wantedSeason) score = 300;
+    else if (title === wanted) score = 260;
+    else if (title.indexOf(wanted) === 0 || wanted.indexOf(title) === 0) score = 180;
+    else if (title.indexOf(wanted) >= 0 || wanted.indexOf(title) >= 0) score = 120;
+    if (score < 0) return;
+    if (seasonText && title.indexOf(ffMatchTitle(seasonText)) >= 0) score += 30;
+    var requestedType = ffText(params && params.type).toLowerCase();
+    if ((requestedType === "tv" || requestedType === "movie") && ffMediaType(item) === requestedType) score += 10;
+    if (score > bestScore) {
+      best = item;
+      bestScore = score;
+    }
+  });
+  return best;
+}
+
 async function loadResource(params) {
   params = params || {};
   var directCandidates = [params.videoUrl, params.url, params.id];
@@ -418,12 +467,25 @@ async function loadResource(params) {
     }
   }
 
-  var vodId = ffVodId(params.link || params.id);
-  if (!vodId) return [];
-  var result = await ffGet({ ac: "detail", ids: vodId });
-  var list = Array.isArray(result.list) ? result.list : [];
-  if (!list.length || ffIsBlocked(list[0])) return [];
-  var lines = ffParsePlayLines(list[0]);
+  var vodInput = ffText(params.link).trim();
+  if (!vodInput && /api\.ffzyapi\.com\/api\.php\/provide\/vod/i.test(ffText(params.id))) {
+    vodInput = ffText(params.id).trim();
+  }
+  var vodId = ffVodId(vodInput);
+  var result;
+  var detail;
+  if (vodId) {
+    result = await ffGet({ ac: "detail", ids: vodId });
+    var detailList = Array.isArray(result.list) ? result.list : [];
+    detail = detailList.length ? detailList[0] : null;
+  } else {
+    var keyword = ffStripHtml(params.seriesName || params.title || params.name);
+    if (!keyword) return [];
+    result = await ffGet({ ac: "detail", wd: keyword });
+    detail = ffPickHomeDetail(result.list, keyword, params);
+  }
+  if (!detail || ffIsBlocked(detail)) return [];
+  var lines = ffParsePlayLines(detail);
   if (!lines.length) return [];
 
   var episode = ffPositiveInt(params.episode, 0);
